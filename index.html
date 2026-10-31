@@ -60,6 +60,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .seg{display:inline-flex;background:var(--stage);border-radius:999px;padding:3px;gap:2px;align-self:center}
 .seg .btn{border:0;background:none;border-radius:999px;padding:6px 14px;color:var(--muted)}
 .seg .btn[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0/.15)}
+.mini{position:fixed;z-index:20;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  width:120px;height:120px;padding:6px;border-radius:50%;border:1px solid var(--line);background:var(--surface);box-shadow:0 6px 20px rgb(0 0 0/.25);cursor:pointer;
+  animation:miniIn .18s ease-out}
+.mini canvas{width:100%;height:100%;display:block;border-radius:50%}
+@keyframes miniIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}
 .edopts{justify-content:center;gap:8px 16px}
 .edopts .check{gap:8px}.edopts select{width:auto}
 .legend i.b{border-top:2px dotted var(--warn)}
@@ -266,6 +271,7 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
     </div>
   </section>
 </div>
+<button class="mini" id="mini" hidden aria-label="Back to the badge editor" title="Back to the editor"><canvas id="miniCv"></canvas></button>
 <input type="file" id="file" accept="image/*" hidden>
 
 <script>
@@ -420,6 +426,7 @@ function drawEditor(){
   ctx.fillStyle=css('--muted');ctx.font=`${11*r}px ${css('--f-mono')}`;ctx.textAlign='center';
   ctx.fillText(`⌀ ${S.cut} mm cut`,c,c+(R*s)+16*r);
   ed.classList.toggle('anchoring',hov.alt&&hov.in&&!drag);
+  queueMicrotask(drawMini);
   const toPx=p=>[c+p.x*s,c+p.y*s];
   if((hov.alt&&hov.in)||(drag&&drag.anchor)){ctx.fillStyle=css('--accent');ctx.globalAlpha=.55;
     for(const q of anchorSnaps()){const[x,y]=toPx(q);ctx.beginPath();ctx.arc(x,y,2*r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
@@ -445,6 +452,14 @@ function sampleAt(d,p){
   const c=document.createElement('canvas');c.width=c.height=1;const g=c.getContext('2d');g.drawImage(raw,u*raw.naturalWidth/d.iw,v*raw.naturalHeight/d.ih,1,1,0,0,1,1);
   const[r,gg,b]=g.getImageData(0,0,1,1).data;return'#'+[r,gg,b].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
+/* ---------- floating mini preview once the editor scrolls out of view above ---------- */
+let edAbove=false;
+function drawMini(){const m=$('#mini'),show=edAbove&&S.tab==='design'&&!!sel();m.hidden=!show;if(!show)return;
+  const cv=$('#miniCv'),r=DPR(),px=Math.round(108*r);if(cv.width!==px){cv.width=cv.height=px}
+  const g=cv.getContext('2d');g.clearRect(0,0,px,px);g.drawImage(ed,0,0,ed.width,ed.height,0,0,px,px)}
+new IntersectionObserver(([en])=>{edAbove=!en.isIntersecting&&en.boundingClientRect.bottom<0;drawMini()},{threshold:0}).observe(ed);
+$('#mini').onclick=()=>ed.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});
+
 /* ---------- anchor + snapping ---------- */
 const hov={in:false,alt:false,shift:false,p:null};let snapHit=false;
 const SNAP_PX=10,snapMM=()=>SNAP_PX/(edScale||1);
@@ -827,7 +842,7 @@ $('#pdf').onclick=()=>pdfAction($('#pdf'),async({doc,name,blob},st)=>{
 /* ---------- tabs ---------- */
 function showTab(t){S.tab=t;store('bp.settings',S);$('#view-design').hidden=t!=='design';$('#view-sheet').hidden=t!=='sheet';
   $('#tab-design').setAttribute('aria-selected',t==='design');$('#tab-sheet').setAttribute('aria-selected',t==='sheet');
-  if(t==='sheet')renderSheet();else{drawEditor();renderLib()}}
+  if(t==='sheet')renderSheet();else{drawEditor();renderLib()}drawMini()}
 $('#tab-design').onclick=()=>showTab('design');$('#tab-sheet').onclick=()=>showTab('sheet');
 
 /* ---------- examples (first run only) ---------- */
