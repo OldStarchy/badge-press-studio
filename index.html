@@ -878,7 +878,7 @@ const Preview=(()=>{
     loading=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
       sc.onload=()=>res(window.THREE);sc.onerror=()=>{loading=null;rej(new Error('three'))};document.head.append(sc)});return loading}
   function profile(){ // [r,z,arcLength] from the face centre outwards, round the lip and under the back
-    const P=S.cut/2,Rv=S.visible/2,depth=Math.max(.5,+S.fold||.5),re=.3,rb=.3,SIDE=40*Math.PI/180,D=Math.PI/180;
+    const P=S.cut/2,Rv=S.visible/2,depth=Math.max(.5,+S.fold||.5),re=.45,rb=.3,SIDE=40*Math.PI/180,D=Math.PI/180;
     const Rf=Math.max(1,Rv-re*.5),hs=Rf*Math.tan(1.5*D)/2;           // face crown: ~1.5 degrees at the edge
     const pts=[];let x=0,z=depth+hs,h=0;
     for(let i=0;i<=48;i++){const r=Rf*i/48;pts.push([r,depth+hs*(1-(r/Rf)**2)])}
@@ -894,21 +894,31 @@ const Preview=(()=>{
     for(let i=1;i<pts.length;i++){const[a,b]=[pts[i-1],pts[i]],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1e-9)continue;
       if(acc+L>=P){const t=(P-acc)/L;out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,P]);break}acc+=L;out.push([b[0],b[1],acc])}
     return{prof:out,H:depth,hs,outer:Rf+re,backR}}
-  function paperGeometry(prof){const SEG=128,pos=[],uv=[],idx=[],P=S.cut/2,n=prof.length;
-    for(let j=0;j<n;j++){const[r,z,s]=prof[j];for(let k=0;k<=SEG;k++){const th=k/SEG*Math.PI*2,c=Math.cos(th),sn=Math.sin(th);
-      pos.push(r*c,r*sn,z);uv.push(.5+s/(2*P)*c,.5+s/(2*P)*sn)}}
+  function paperGeometry(prof){const SEG=432,PLEATS=72,pos=[],uv=[],idx=[],P=S.cut/2,Rv=S.visible/2,n=prof.length;
+    for(let j=0;j<n;j++){const[r,z,s]=prof[j];
+      // profile normal (for crimp pleats where the excess paper bunches up past the face edge)
+      const a=prof[Math.max(0,j-1)],b=prof[Math.min(n-1,j+1)],tr=b[0]-a[0],tz=b[1]-a[1],tl=Math.hypot(tr,tz)||1,nr=tz/tl,nz=-tr/tl;
+      const amp=.09*Math.min(1,Math.max(0,(s-Rv-.4)/1.2));
+      for(let k=0;k<=SEG;k++){const th=k/SEG*Math.PI*2,c=Math.cos(th),sn=Math.sin(th),w=amp*Math.sin(PLEATS*th);
+        const rr=r+nr*w,zz=z+nz*w;pos.push(rr*c,rr*sn,zz);uv.push(.5+s/(2*P)*c,.5+s/(2*P)*sn)}}
     for(let j=0;j<n-1;j++)for(let k=0;k<SEG;k++){const a=j*(SEG+1)+k,b=a+SEG+1;idx.push(a,b,a+1,b,b+1,a+1)}
     const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pos,3));g.setAttribute('uv',new T.Float32BufferAttribute(uv,2));
     g.setIndex(idx);g.computeVertexNormals();return g}
-  function buildBack(innerR){const g=new T.Group(),metal=new T.MeshPhongMaterial({color:0x8d949d,specular:0x555555,shininess:70}),
-      steel=new T.MeshPhongMaterial({color:0xc9ced4,specular:0x999999,shininess:110});
-    const plate=new T.Mesh(new T.CircleGeometry(Math.max(1,innerR),96),metal);plate.rotation.x=Math.PI;plate.position.z=-.08;g.add(plate);
-    const y=innerR*.3,L=innerR*1.45,x0=-L/2,x1=L/2;
-    const hinge=new T.Mesh(new T.BoxGeometry(3,2.2,1.4),steel);hinge.position.set(x0-.6,y,-.75);g.add(hinge);       // riveted hinge block
-    const pin=new T.Mesh(new T.CylinderGeometry(.32,.32,L,16),steel);pin.rotation.z=Math.PI/2;pin.position.set(0,y,-1.25);g.add(pin);
-    const tip=new T.Mesh(new T.ConeGeometry(.32,1.2,16),steel);tip.rotation.z=-Math.PI/2;tip.position.set(x1+.6,y,-1.25);g.add(tip);
-    const clasp=new T.Mesh(new T.CylinderGeometry(1.1,1.1,1.6,24,1,true,0,Math.PI*1.4),steel);clasp.material.side=T.DoubleSide;  // C-shaped catch
-    clasp.rotation.z=Math.PI/2;clasp.position.set(x1-.2,y,-1.1);g.add(clasp);
+  const COLLAR=.9;
+  function buildBack(R){ // cream plastic back: a collar, a flat outer ring, a recessed centre, two pin holes, a vertical pin
+    const g=new T.Group(),D2=T.DoubleSide,
+      plastic=new T.MeshPhongMaterial({color:0xe4dccb,specular:0x1a1a1a,shininess:18,side:D2}),
+      dark=new T.MeshPhongMaterial({color:0x50565d,specular:0x444444,shininess:50,side:D2}),
+      steel=new T.MeshPhongMaterial({color:0xd3d7dc,specular:0xaaaaaa,shininess:120});
+    R=Math.max(2,R);const Ri=R*.84,rec=.35,zb=-COLLAR;
+    const tube=(r,h,z)=>{const m=new T.Mesh(new T.CylinderGeometry(r,r,h,120,1,true),plastic);m.rotation.x=Math.PI/2;m.position.z=z;return m};
+    const face=(geo,z,mat)=>{const m=new T.Mesh(geo,mat||plastic);m.rotation.x=Math.PI;m.position.z=z;return m};
+    g.add(tube(R,COLLAR,-COLLAR/2),face(new T.RingGeometry(Ri,R,120),zb),tube(Ri,rec,zb+rec/2),face(new T.CircleGeometry(Ri,120),zb+rec));
+    const hy=Ri*.68,hr=Ri*.17;
+    for(const y of[hy,-hy]){const h=face(new T.CircleGeometry(hr,40),zb+rec-.02,dark);h.position.y=y;g.add(h)}
+    const pz=zb-.35,pin=new T.Mesh(new T.CylinderGeometry(.36,.36,hy*2,16),steel);pin.position.set(0,0,pz);g.add(pin);   // pin runs top to bottom
+    const loop=new T.Mesh(new T.TorusGeometry(.75,.24,10,28),steel);loop.rotation.y=Math.PI/2;loop.position.set(0,hy+.2,pz+.35);g.add(loop); // coiled hinge
+    const hook=new T.Mesh(new T.TorusGeometry(.7,.24,10,24,Math.PI*1.15),steel);hook.rotation.y=Math.PI/2;hook.rotation.x=Math.PI;hook.position.set(0,-hy,pz+.3);g.add(hook);
     return g}
   function textureFor(d){const N=1024,c=document.createElement('canvas');c.width=c.height=N;const g=c.getContext('2d');
     paintBadge(g,d,N/2,N/2,N/S.cut,S.cut/2);const t=new T.CanvasTexture(c);t.encoding=T.sRGBEncoding;t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t}
@@ -919,7 +929,7 @@ const Preview=(()=>{
     const{prof,H,hs,outer,backR}=profile();tex=textureFor(d);
     paperMesh=new T.Mesh(paperGeometry(prof),new T.MeshPhongMaterial({map:tex,specular:0x2a2a2a,shininess:35,side:T.DoubleSide}));
     badge=new T.Group();badge.add(paperMesh);badge.add(buildBack(backR-.7)); // the back collar covers the tucked-under paper
-    const pivot=new T.Group();badge.position.z=-(H+hs)/2;pivot.add(badge);pivot.quaternion.copy(keepQ);
+    const pivot=new T.Group();badge.position.z=-(H+hs-COLLAR)/2;pivot.add(badge);pivot.quaternion.copy(keepQ);
     pivot.name='pivot';scene.add(pivot);badge=pivot;camDist=Math.max(camDist,0);fit(outer);render()}
   let fitR=20;function fit(outer){fitR=outer;camera.near=1;camera.far=outer*40;camera.position.set(0,0,outer*2.15/Math.tan(camera.fov*Math.PI/360)*camDistK);camera.updateProjectionMatrix()}
   let camDistK=1;
@@ -929,7 +939,7 @@ const Preview=(()=>{
       renderer=new T.WebGLRenderer({canvas:cv,antialias:true,alpha:true});renderer.outputEncoding=T.sRGBEncoding;
       scene=new T.Scene();camera=new T.PerspectiveCamera(28,1,1,2000);
       scene.add(new T.AmbientLight(0xffffff,.55));const key=new T.DirectionalLight(0xffffff,.75);key.position.set(-30,45,80);scene.add(key);
-      const rim=new T.DirectionalLight(0xffffff,.25);rim.position.set(40,-30,-40);scene.add(rim);
+      const rim=new T.DirectionalLight(0xffffff,.45);rim.position.set(40,-30,-60);scene.add(rim);
       home=new T.Quaternion().setFromEuler(new T.Euler(-.38,.42,0));
       new ResizeObserver(resize).observe(cv);bindControls();msg.textContent='Drag to turn · scroll or pinch to zoom · double-click to reset'}
     resize();build()}
