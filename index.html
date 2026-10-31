@@ -57,6 +57,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .fitgrid{display:grid;grid-template-columns:auto repeat(3,minmax(0,1fr));gap:6px 6px;align-items:center}
 .fitgrid .ls-h{font-size:11px;color:var(--muted);text-align:center}
 .fitgrid .ls-n{font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;background:var(--stage);border-radius:999px;padding:3px;gap:2px;align-self:center}
+.seg .btn{border:0;background:none;border-radius:999px;padding:6px 14px;color:var(--muted)}
+.seg .btn[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0/.15)}
 .edopts{justify-content:center;gap:8px 16px}
 .edopts .check{gap:8px}.edopts select{width:auto}
 .legend i.b{border-top:2px dotted var(--warn)}
@@ -153,6 +156,9 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
       <div class="legend"><span><i></i>Cut line</span><span><i class="f"></i>Fold zone (wraps the rim)</span><span><i class="v"></i>Visible face</span><span><i class="b"></i>Visible fold edge</span></div>
       <div class="row"><button class="btn sm" id="undoBtn" title="Undo (Ctrl+Z)">Undo</button><button class="btn sm" id="redoBtn" title="Redo (Ctrl+Shift+Z)">Redo</button>
 </div>
+      <div class="seg" id="touchMode" role="group" aria-label="One-finger drag" hidden>
+        <button class="btn sm" data-mode="move" aria-pressed="true">Move &amp; zoom</button><button class="btn sm" data-mode="rotate" aria-pressed="false">Rotate</button>
+      </div>
       <div class="row edopts">
         <label class="check" for="zoomAt">Zoom around <select id="zoomAt"><option value="mouse">Mouse pointer</option><option value="badge">Badge centre</option><option value="image">Image centre</option><option value="anchor">Anchor</option></select></label>
         <label class="check" for="rotAt">Rotate around <select id="rotAt"><option value="mouse">Mouse pointer</option><option value="badge">Badge centre</option><option value="image">Image centre</option><option value="anchor">Anchor</option></select></label>
@@ -270,7 +276,7 @@ function load(k,def){try{const v=localStorage.getItem(k);return v?{...def,...JSO
 function store(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
-let S=load('bp.settings',{cut:44,visible:32,paper:'a4',margin:5,gap:1,ring:true,emptyGuides:true,scaleBar:true,ticks:true,bleed:0,cutColor:'#000000',cutAlpha:100,cutW:.3,guideColor:'#000000',guideAlpha:20,guideW:.1,pvZoom:'small',zoomAt:'mouse',rotAt:'image',moveSnap:true,anchor:{x:0,y:0},tab:'design',ovs:0,ovsUnit:'px'});
+let S=load('bp.settings',{cut:44,visible:32,paper:'a4',margin:5,gap:1,ring:true,emptyGuides:true,scaleBar:true,ticks:true,bleed:0,cutColor:'#000000',cutAlpha:100,cutW:.3,guideColor:'#000000',guideAlpha:20,guideW:.1,pvZoom:'small',zoomAt:'mouse',rotAt:'image',touchMode:'move',moveSnap:true,anchor:{x:0,y:0},tab:'design',ovs:0,ovsUnit:'px'});
 if(S.tickMode==null)S.tickMode=S.ticks===false?'none':'30';
 if(S.fold==null)S.fold=1.5;
 let qty=load('bp.qty',{});
@@ -468,6 +474,13 @@ for(const t of['keydown','keyup'])document.addEventListener(t,e=>{if(e.key!=='Al
   const was=[hov.alt,hov.shift];hov.alt=e.altKey;hov.shift=e.shiftKey;
   if(drag&&was[1]!==hov.shift){const d=sel();if(d)dragTo(d)}if(hov.in&&(was[0]!==hov.alt||was[1]!==hov.shift))drawEditor()});
 window.addEventListener('blur',()=>{if(hov.alt){hov.alt=false;drawEditor()}});
+/* touch devices: "Mouse pointer" means the pinch centre for zoom, and isn't offered for rotation */
+const isTouch=matchMedia('(pointer: coarse)').matches;
+if(isTouch){$('#zoomAt').querySelector('option[value="mouse"]').textContent='Pinch centre';
+  $('#rotAt').querySelector('option[value="mouse"]').remove();if(S.rotAt==='mouse')S.rotAt='image';
+  const tm=$('#touchMode');tm.hidden=false;const syncTm=()=>tm.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===S.touchMode));
+  tm.querySelectorAll('button').forEach(b=>b.onclick=()=>{S.touchMode=b.dataset.mode;store('bp.settings',S);syncTm()});syncTm()}
+const rotateMode=()=>isTouch&&S.touchMode==='rotate';
 $('#zoomAt').value=S.zoomAt;$('#rotAt').value=S.rotAt;$('#moveSnap').checked=S.moveSnap;
 $('#rotAt').onchange=e=>{S.rotAt=e.target.value;store('bp.settings',S)};
 $('#moveSnap').onchange=e=>{S.moveSnap=e.target.checked;store('bp.settings',S)};
@@ -478,10 +491,15 @@ ed.addEventListener('pointerdown',e=>{const d=sel();
   if(!d)return;
   if(pickMode){const c=sampleAt(d,toMM(e));setPick(false);if(c){const k=keyOf(d);k.color=c;k.on=true;applyKey(d);changed()}return}
   ed.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,toMM(e));ed.classList.add('drag');
-  if(ptrs.size===1)drag={start:toMM(e),x:d.x,y:d.y};else drag=null;ed.focus()});
+  if(ptrs.size===1){drag={start:toMM(e),x:d.x,y:d.y};
+    if(rotateMode()){const pv=pivot(S.rotAt==='mouse'?'image':S.rotAt,d,null);Object.assign(drag,{rotate:true,pv,rot:d.rot,a0:Math.atan2(drag.start.y-pv.y,drag.start.x-pv.x)})}}
+  else drag=null;ed.focus({preventScroll:true})});
 ed.addEventListener('pointermove',e=>{const d=sel();if(!d||!ptrs.has(e.pointerId))return;
   const prev=[...ptrs.values()];ptrs.set(e.pointerId,toMM(e));
-  if(ptrs.size===1&&drag){drag.last=toMM(e);hov.shift=e.shiftKey;dragTo(d)}
+  if(ptrs.size===1&&drag&&drag.rotate){const p=toMM(e),a=Math.atan2(p.y-drag.pv.y,p.x-drag.pv.x);
+    let target=drag.rot+(a-drag.a0)*180/Math.PI;if(snapActive())target=Math.round(target/15)*15;  // 15 degree steps with Move snapping
+    d.x=drag.x;d.y=drag.y;d.rot=drag.rot;rotateAbout(d,target-drag.rot,drag.pv)}
+  else if(ptrs.size===1&&drag){drag.last=toMM(e);hov.shift=e.shiftKey;dragTo(d)}
   else if(ptrs.size===2){const now=[...ptrs.values()];const dist=a=>Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
     const f=dist(now)/(dist(prev)||1);const m={x:(now[0].x+now[1].x)/2,y:(now[0].y+now[1].y)/2};scaleAbout(d,f,zoomPoint(d,m))}});
 function zoomPoint(d,p){return pivot(S.zoomAt,d,p)}
