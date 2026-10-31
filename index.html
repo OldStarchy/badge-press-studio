@@ -157,7 +157,7 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
       <div class="row"><button class="btn sm" id="undoBtn" title="Undo (Ctrl+Z)">Undo</button><button class="btn sm" id="redoBtn" title="Redo (Ctrl+Shift+Z)">Redo</button>
 </div>
       <div class="seg" id="touchMode" role="group" aria-label="One-finger drag" hidden>
-        <button class="btn sm" data-mode="move" aria-pressed="true">Move &amp; zoom</button><button class="btn sm" data-mode="rotate" aria-pressed="false">Rotate</button>
+        <button class="btn sm" data-mode="move" aria-pressed="true">Move &amp; zoom</button><button class="btn sm" data-mode="rotate" aria-pressed="false">Rotate</button><button class="btn sm" data-mode="anchor" aria-pressed="false">Move anchor</button>
       </div>
       <div class="row edopts">
         <label class="check" for="zoomAt">Zoom around <select id="zoomAt"><option value="mouse">Mouse pointer</option><option value="badge">Badge centre</option><option value="image">Image centre</option><option value="anchor">Anchor</option></select></label>
@@ -421,7 +421,7 @@ function drawEditor(){
   ctx.fillText(`⌀ ${S.cut} mm cut`,c,c+(R*s)+16*r);
   ed.classList.toggle('anchoring',hov.alt&&hov.in&&!drag);
   const toPx=p=>[c+p.x*s,c+p.y*s];
-  if(hov.alt&&hov.in){ctx.fillStyle=css('--accent');ctx.globalAlpha=.55;
+  if((hov.alt&&hov.in)||(drag&&drag.anchor)){ctx.fillStyle=css('--accent');ctx.globalAlpha=.55;
     for(const q of anchorSnaps()){const[x,y]=toPx(q);ctx.beginPath();ctx.arc(x,y,2*r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
   gizmo(ctx,...toPx(S.anchor),r,1,snapHit);
   if(hov.alt&&hov.in&&hov.p)gizmo(ctx,...toPx(anchorTarget(hov.p,hov.shift)),r,.5,false);
@@ -492,11 +492,14 @@ ed.addEventListener('pointerdown',e=>{const d=sel();
   if(pickMode){const c=sampleAt(d,toMM(e));setPick(false);if(c){const k=keyOf(d);k.color=c;k.on=true;applyKey(d);changed()}return}
   ed.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,toMM(e));ed.classList.add('drag');
   if(ptrs.size===1){drag={start:toMM(e),x:d.x,y:d.y};
+    if(isTouch&&S.touchMode==='anchor')Object.assign(drag,{anchor:true,ax:S.anchor.x,ay:S.anchor.y});
     if(rotateMode()){const pv=pivot(S.rotAt==='mouse'?'image':S.rotAt,d,null);Object.assign(drag,{rotate:true,pv,rot:d.rot,a0:Math.atan2(drag.start.y-pv.y,drag.start.x-pv.x)})}}
   else drag=null;ed.focus({preventScroll:true})});
 ed.addEventListener('pointermove',e=>{const d=sel();if(!d||!ptrs.has(e.pointerId))return;
   const prev=[...ptrs.values()];ptrs.set(e.pointerId,toMM(e));
-  if(ptrs.size===1&&drag&&drag.rotate){const p=toMM(e),a=Math.atan2(p.y-drag.pv.y,p.x-drag.pv.x);
+  if(ptrs.size===1&&drag&&drag.anchor){const p=toMM(e);  // drag the anchor by its offset; snaps to the snap points with Move snapping
+    S.anchor=anchorTarget({x:drag.ax+p.x-drag.start.x,y:drag.ay+p.y-drag.start.y},!snapActive());drawEditor()}
+  else if(ptrs.size===1&&drag&&drag.rotate){const p=toMM(e),a=Math.atan2(p.y-drag.pv.y,p.x-drag.pv.x);
     let target=drag.rot+(a-drag.a0)*180/Math.PI;if(snapActive())target=Math.round(target/15)*15;  // 15 degree steps with Move snapping
     d.x=drag.x;d.y=drag.y;d.rot=drag.rot;rotateAbout(d,target-drag.rot,drag.pv)}
   else if(ptrs.size===1&&drag){drag.last=toMM(e);hov.shift=e.shiftKey;dragTo(d)}
@@ -504,7 +507,7 @@ ed.addEventListener('pointermove',e=>{const d=sel();if(!d||!ptrs.has(e.pointerId
     const f=dist(now)/(dist(prev)||1);const m={x:(now[0].x+now[1].x)/2,y:(now[0].y+now[1].y)/2};scaleAbout(d,f,zoomPoint(d,m))}});
 function zoomPoint(d,p){return pivot(S.zoomAt,d,p)}
 $('#zoomAt').onchange=e=>{S.zoomAt=e.target.value;store('bp.settings',S)};
-const up=e=>{ptrs.delete(e.pointerId);if(!ptrs.size){drag=null;syncSnapBox();ed.classList.remove('drag');if(snapHit){snapHit=false;drawEditor()}}};
+const up=e=>{ptrs.delete(e.pointerId);if(!ptrs.size){if(drag&&drag.anchor){store('bp.settings',S);drag=null;drawEditor()}drag=null;syncSnapBox();ed.classList.remove('drag');if(snapHit){snapHit=false;drawEditor()}}};
 ed.addEventListener('pointerup',up);ed.addEventListener('pointercancel',up);
 ed.addEventListener('wheel',e=>{const d=sel();if(!d||!imgs.get(d.id))return;e.preventDefault();
   let dy=e.deltaY||e.deltaX;if(e.deltaMode===1)dy*=33;else if(e.deltaMode===2)dy*=400;
