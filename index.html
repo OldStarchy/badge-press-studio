@@ -879,7 +879,7 @@ const Preview=(()=>{
       sc.onload=()=>res(window.THREE);sc.onerror=()=>{loading=null;rej(new Error('three'))};document.head.append(sc)});return loading}
   function profile(){ // [r,z,arcLength] from the face centre outwards, round the lip and under the back
     const P=S.cut/2,Rv=S.visible/2,depth=Math.max(.5,+S.fold||.5),re=.45,rb=.3,SIDE=40*Math.PI/180,D=Math.PI/180;
-    const Rf=Math.max(1,Rv-re*.5),hs=Rf*Math.tan(1.5*D)/2;           // face crown: ~1.5 degrees at the edge
+    const Rf=Math.max(1,Rv-re*.5),hs=Rf*Math.tan(6*D)/2;             // face crown: ~6 degrees at the edge (matches a real pressed badge)
     const pts=[];let x=0,z=depth+hs,h=0;
     for(let i=0;i<=48;i++){const r=Rf*i/48;pts.push([r,depth+hs*(1-(r/Rf)**2)])}
     x=Rf;z=depth;h=-Math.atan(2*hs/Rf);
