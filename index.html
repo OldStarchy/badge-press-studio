@@ -453,13 +453,19 @@ function snapMove(d){snapHit=false;let best=null,bd=snapMM();const A=S.anchor;
 function pivot(mode,d,p){return mode==='badge'?{x:0,y:0}:mode==='image'?{x:d.x,y:d.y}:mode==='anchor'?{...S.anchor}:p}
 function rotateAbout(d,deg,pv){const t=deg*Math.PI/180,c=Math.cos(t),sn=Math.sin(t),dx=d.x-pv.x,dy=d.y-pv.y;
   d.x=pv.x+dx*c-dy*sn;d.y=pv.y+dx*sn+dy*c;d.rot=r2(((d.rot+deg)%360+360)%360);changed()}
+/* the checkbox shows the effective snapping state: Shift flips it for the duration of a drag */
+const snapActive=()=>S.moveSnap!==(!!drag&&hov.shift);
+function syncSnapBox(){$('#moveSnap').checked=snapActive()}
+function dragTo(d){const p=drag.last||drag.start;d.x=drag.x+p.x-drag.start.x;d.y=drag.y+p.y-drag.start.y;
+  if(snapActive())snapMove(d);else snapHit=false;syncSnapBox();changed()}
 function setHov(e){const was=hov.alt;hov.alt=e.altKey;hov.shift=e.shiftKey;if(e.clientX!=null){hov.p=toMM(e)}if(hov.alt||was)drawEditor()}
 ed.addEventListener('pointerenter',e=>{hov.in=true;setHov(e)});
 ed.addEventListener('pointerleave',()=>{hov.in=false;hov.p=null;drawEditor()});
 ed.addEventListener('pointermove',e=>{if(!ptrs.size)setHov(e)});
 for(const t of['keydown','keyup'])document.addEventListener(t,e=>{if(e.key!=='Alt'&&e.key!=='Shift')return;
   if(hov.in&&e.key==='Alt')e.preventDefault(); // stop Alt from focusing the browser menu while over the editor
-  const was=[hov.alt,hov.shift];hov.alt=e.altKey;hov.shift=e.shiftKey;if(hov.in&&(was[0]!==hov.alt||was[1]!==hov.shift))drawEditor()});
+  const was=[hov.alt,hov.shift];hov.alt=e.altKey;hov.shift=e.shiftKey;
+  if(drag&&was[1]!==hov.shift){const d=sel();if(d)dragTo(d)}if(hov.in&&(was[0]!==hov.alt||was[1]!==hov.shift))drawEditor()});
 window.addEventListener('blur',()=>{if(hov.alt){hov.alt=false;drawEditor()}});
 $('#zoomAt').value=S.zoomAt;$('#rotAt').value=S.rotAt;$('#moveSnap').checked=S.moveSnap;
 $('#rotAt').onchange=e=>{S.rotAt=e.target.value;store('bp.settings',S)};
@@ -474,13 +480,12 @@ ed.addEventListener('pointerdown',e=>{const d=sel();
   if(ptrs.size===1)drag={start:toMM(e),x:d.x,y:d.y};else drag=null;ed.focus()});
 ed.addEventListener('pointermove',e=>{const d=sel();if(!d||!ptrs.has(e.pointerId))return;
   const prev=[...ptrs.values()];ptrs.set(e.pointerId,toMM(e));
-  if(ptrs.size===1&&drag){const p=toMM(e);d.x=drag.x+p.x-drag.start.x;d.y=drag.y+p.y-drag.start.y;
-    if(S.moveSnap!==e.shiftKey)snapMove(d);else snapHit=false;changed()}
+  if(ptrs.size===1&&drag){drag.last=toMM(e);hov.shift=e.shiftKey;dragTo(d)}
   else if(ptrs.size===2){const now=[...ptrs.values()];const dist=a=>Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
     const f=dist(now)/(dist(prev)||1);const m={x:(now[0].x+now[1].x)/2,y:(now[0].y+now[1].y)/2};scaleAbout(d,f,zoomPoint(d,m))}});
 function zoomPoint(d,p){return pivot(S.zoomAt,d,p)}
 $('#zoomAt').onchange=e=>{S.zoomAt=e.target.value;store('bp.settings',S)};
-const up=e=>{ptrs.delete(e.pointerId);if(!ptrs.size){drag=null;ed.classList.remove('drag');if(snapHit){snapHit=false;drawEditor()}}};
+const up=e=>{ptrs.delete(e.pointerId);if(!ptrs.size){drag=null;syncSnapBox();ed.classList.remove('drag');if(snapHit){snapHit=false;drawEditor()}}};
 ed.addEventListener('pointerup',up);ed.addEventListener('pointercancel',up);
 ed.addEventListener('wheel',e=>{const d=sel();if(!d||!imgs.get(d.id))return;e.preventDefault();
   let dy=e.deltaY||e.deltaX;if(e.deltaMode===1)dy*=33;else if(e.deltaMode===2)dy*=400;
