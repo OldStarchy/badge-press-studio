@@ -68,6 +68,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   animation:miniIn .18s ease-out}
 .mini canvas{width:100%;height:100%;display:block;border-radius:50%}
 @keyframes miniIn{from{opacity:0;transform:translateY(-8px) scale(.9)}to{opacity:1;transform:none}}
+.pvgrid{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;align-items:start}
+#pv3d{width:100%;max-width:760px;aspect-ratio:1;display:block;touch-action:none;cursor:grab;border-radius:14px;background:var(--surface);border:1.5px dashed var(--line);box-sizing:border-box}
+#pv3d.drag{cursor:grabbing;border-style:solid;border-color:var(--accent)}
+@media (max-width:980px){.pvgrid{grid-template-columns:1fr}#pvLib{flex-direction:row;flex-wrap:wrap}}
 .edopts{justify-content:center;gap:8px 16px}
 .edopts .check{gap:8px}.edopts select{width:auto}
 .legend i.b{border-top:2px dotted var(--warn)}
@@ -137,6 +141,7 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
     </div>
     <div class="tabs" role="tablist">
       <button role="tab" id="tab-design" aria-selected="true">Design</button>
+      <button role="tab" id="tab-preview" aria-selected="false">Preview</button>
       <button role="tab" id="tab-sheet" aria-selected="false">Print sheet</button>
     </div>
   </header>
@@ -165,7 +170,7 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
     <div class="stagebox" id="stage">
       <canvas id="ed" aria-label="Badge editor. Drag to move the image, scroll or pinch to scale."></canvas>
       <div class="legend"><span><i></i>Cut line</span><span><i class="f"></i>Fold zone (wraps the rim)</span><span><i class="v"></i>Visible face</span><span><i class="b"></i>Visible fold edge</span></div>
-      <div class="row"><button class="btn sm" id="undoBtn" title="Undo (Ctrl+Z)">Undo</button><button class="btn sm" id="redoBtn" title="Redo (Ctrl+Shift+Z)">Redo</button>
+      <div class="row"><button class="btn sm" id="undoBtn" title="Undo (Ctrl+Z)">Undo</button><button class="btn sm" id="redoBtn" title="Redo (Ctrl+Shift+Z)">Redo</button><button class="btn sm primary" id="toPreview">3D preview</button>
 </div>
       <div class="seg" id="touchMode" role="group" aria-label="One-finger drag" hidden>
         <button class="btn sm" data-mode="move" aria-pressed="true">Move &amp; zoom</button><button class="btn sm" data-mode="rotate" aria-pressed="false">Rotate</button><button class="btn sm" data-mode="anchor" aria-pressed="false">Move anchor</button>
@@ -234,6 +239,19 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
   </section>
 
   <!-- SHEET -->
+  <!-- PREVIEW -->
+  <section id="view-preview" class="pvgrid" hidden>
+    <div class="panel">
+      <h2>Badge</h2>
+      <div class="lib" id="pvLib"></div>
+    </div>
+    <div class="stagebox">
+      <canvas id="pv3d" aria-label="3D badge preview. Drag to turn it, scroll or pinch to zoom."></canvas>
+      <p class="hint" id="pvMsg">Drag to turn · scroll or pinch to zoom · double-click to reset</p>
+      <div class="row"><button class="btn sm" id="pvReset">Reset view</button><button class="btn sm" id="pvEdit">Edit this design</button></div>
+    </div>
+  </section>
+
   <section id="view-sheet" class="sheetgrid" hidden>
     <div class="panel">
       <h2>How many of each</h2>
@@ -553,7 +571,7 @@ function syncControls(){
   $('#replace').textContent=hasImg?'Replace image':'Add image';
   $('#del').textContent='Delete';delArmed=false;
 }
-function changed(){const d=sel();if(d)saveSoon(d);drawEditor();syncControls();renderLib(true)}
+function changed(){const d=sel();if(d)saveSoon(d);if(S.tab==='preview')Preview.refresh();drawEditor();syncControls();renderLib(true)}
 const num=(id,fn)=>$(id).addEventListener('input',e=>{const v=parseFloat(e.target.value);const d=sel();if(!d||!isFinite(v))return;fn(d,v);saveSoon(d);drawEditor();renderLib(true)});
 num('#w',(d,v)=>d.w=Math.max(1,v));num('#x',(d,v)=>d.x=v);num('#y',(d,v)=>d.y=v);num('#rot',(d,v)=>d.rot=v);
 $('#zoom').addEventListener('input',e=>{const d=sel();if(!d)return;scaleAbout(d,Math.exp(+e.target.value)/d.w,{x:d.x,y:d.y})});
@@ -688,16 +706,20 @@ document.addEventListener('paste',e=>{if(S.tab!=='design'||e.target.matches('inp
   const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'));if(it){e.preventDefault();ingest(it.getAsFile(),sel()?'replace':'new')}});
 
 /* ---------- library ---------- */
+function fillLib(box){box.innerHTML='';if(!designs.length){box.innerHTML='<p class="empty">No designs yet. Make one on the Design tab.</p>';return}
+  for(const d of designs){const b=document.createElement('button');b.className='item';b.setAttribute('aria-current',d.id===selId);
+    const c=document.createElement('canvas');c.className='th';c.dataset.id=d.id;drawThumb(c,d,40);
+    const n=document.createElement('span');n.className='nm';n.textContent=d.name||'Untitled';b.append(c,n);b.onclick=()=>select(d.id);box.append(b)}}
 function renderLib(thumbsOnly){
   const lib=$('#lib');
-  if(thumbsOnly){lib.querySelectorAll('canvas.th').forEach(c=>{const d=designs.find(x=>x.id===c.dataset.id);if(d)drawThumb(c,d,40)});return}
-  lib.innerHTML='';
+  if(thumbsOnly){document.querySelectorAll('#lib canvas.th,#pvLib canvas.th').forEach(c=>{const d=designs.find(x=>x.id===c.dataset.id);if(d)drawThumb(c,d,40)});return}
+  fillLib($('#pvLib'));lib.innerHTML='';
   if(!designs.length){lib.innerHTML='<p class="empty">No designs yet. Start with an image.</p>';return}
   for(const d of designs){const b=document.createElement('button');b.className='item';b.setAttribute('aria-current',d.id===selId);
     const c=document.createElement('canvas');c.className='th';c.dataset.id=d.id;drawThumb(c,d,40);
     const n=document.createElement('span');n.className='nm';n.textContent=d.name||'Untitled';b.append(c,n);b.onclick=()=>select(d.id);lib.append(b)}
 }
-function select(id){selId=id;{const d=designs.find(x=>x.id===id);if(d&&!lastState[id])lastState[id]=snap(d)}syncUndo();renderLib();syncControls();drawEditor()}
+function select(id){selId=id;if(S.tab==='preview')queueMicrotask(()=>Preview.refresh());{const d=designs.find(x=>x.id===id);if(d&&!lastState[id])lastState[id]=snap(d)}syncUndo();renderLib();syncControls();drawEditor()}
 
 /* ---------- badge size ---------- */
 function syncSize(){$('#cut').value=S.cut;$('#vis').value=S.visible;$('#fold').value=S.fold;$('#specline').textContent=`⌀${S.cut} mm blanks · ⌀${S.visible} mm face · ${perSheet()} per ${S.paper==='a4'?'A4':'Letter'} sheet`}
@@ -847,11 +869,86 @@ $('#pdf').onclick=()=>pdfAction($('#pdf'),async({doc,name,blob},st)=>{
       catch(e){st.textContent=e&&e.code==='declined'?'Download cancelled.':e&&e.code==='rate_limited'?'A save prompt is already open. Finish that one first.':'The PDF could not be saved here. '+(e&&e.message||'')}}
 });
 
+/* ---------- 3D preview: a pin-back button built as a lathe whose profile is parameterised by arc length,
+   so the flat printed circle wraps over the dome, round the rim and under the back without stretching ---------- */
+const Preview=(()=>{
+  let T=null,renderer,scene,camera,badge,paperMesh,backGroup,tex,loading=null,camDist=1,home=null;
+  const cv=$('#pv3d'),msg=$('#pvMsg');
+  function loadThree(){if(window.THREE)return Promise.resolve(window.THREE);if(loading)return loading;
+    loading=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+      sc.onload=()=>res(window.THREE);sc.onerror=()=>{loading=null;rej(new Error('three'))};document.head.append(sc)});return loading}
+  function profile(){ // [r,z] points in mm from the face centre outwards and round the back
+    const P=S.cut/2,Rv=S.visible/2,rr=Math.max(1,Math.min(4,(P-Rv)/2.2)),r1=Math.max(1,Rv-rr*.5),hs=Rv*.05,rr2=.8,side=Math.max(.6,(P-Rv)*.25);
+    const H=rr+side+rr2,pts=[];
+    for(let i=0;i<=40;i++){const r=r1*i/40;pts.push([r,H+hs*(1-(r/r1)**2)])}
+    for(let i=1;i<=24;i++){const a=Math.PI/2*(1-i/24);pts.push([r1+rr*Math.cos(a),H-rr+rr*Math.sin(a)])}
+    for(let i=1;i<=6;i++)pts.push([r1+rr,H-rr-(H-rr-rr2)*i/6]);
+    for(let i=1;i<=12;i++){const a=-Math.PI/2*i/12;pts.push([r1+rr-rr2+rr2*Math.cos(a),rr2+rr2*Math.sin(a)])}
+    for(let i=1;i<=20;i++)pts.push([(r1+rr-rr2)*(1-i/20),0]);
+    const out=[[pts[0][0],pts[0][1],0]];let acc=0; // cut the profile off where the paper runs out (arc length = cut radius)
+    for(let i=1;i<pts.length;i++){const[a,b]=[pts[i-1],pts[i]],L=Math.hypot(b[0]-a[0],b[1]-a[1]);
+      if(acc+L>=P){const t=(P-acc)/L;out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,P]);break}acc+=L;out.push([b[0],b[1],acc])}
+    return{prof:out,H,hs,outer:r1+rr}}
+  function paperGeometry(prof){const SEG=128,pos=[],uv=[],idx=[],P=S.cut/2,n=prof.length;
+    for(let j=0;j<n;j++){const[r,z,s]=prof[j];for(let k=0;k<=SEG;k++){const th=k/SEG*Math.PI*2,c=Math.cos(th),sn=Math.sin(th);
+      pos.push(r*c,r*sn,z);uv.push(.5+s/(2*P)*c,.5+s/(2*P)*sn)}}
+    for(let j=0;j<n-1;j++)for(let k=0;k<SEG;k++){const a=j*(SEG+1)+k,b=a+SEG+1;idx.push(a,b,a+1,b,b+1,a+1)}
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pos,3));g.setAttribute('uv',new T.Float32BufferAttribute(uv,2));
+    g.setIndex(idx);g.computeVertexNormals();return g}
+  function buildBack(innerR){const g=new T.Group(),metal=new T.MeshPhongMaterial({color:0x8d949d,specular:0x555555,shininess:70}),
+      steel=new T.MeshPhongMaterial({color:0xc9ced4,specular:0x999999,shininess:110});
+    const plate=new T.Mesh(new T.CircleGeometry(innerR+.4,96),metal);plate.rotation.x=Math.PI;plate.position.z=-.05;g.add(plate);
+    const y=innerR*.3,L=innerR*1.45,x0=-L/2,x1=L/2;
+    const hinge=new T.Mesh(new T.BoxGeometry(3,2.2,1.4),steel);hinge.position.set(x0-.6,y,-.75);g.add(hinge);       // riveted hinge block
+    const pin=new T.Mesh(new T.CylinderGeometry(.32,.32,L,16),steel);pin.rotation.z=Math.PI/2;pin.position.set(0,y,-1.25);g.add(pin);
+    const tip=new T.Mesh(new T.ConeGeometry(.32,1.2,16),steel);tip.rotation.z=-Math.PI/2;tip.position.set(x1+.6,y,-1.25);g.add(tip);
+    const clasp=new T.Mesh(new T.CylinderGeometry(1.1,1.1,1.6,24,1,true,0,Math.PI*1.4),steel);clasp.material.side=T.DoubleSide;  // C-shaped catch
+    clasp.rotation.z=Math.PI/2;clasp.position.set(x1-.2,y,-1.1);g.add(clasp);
+    return g}
+  function textureFor(d){const N=1024,c=document.createElement('canvas');c.width=c.height=N;const g=c.getContext('2d');
+    paintBadge(g,d,N/2,N/2,N/S.cut,S.cut/2);const t=new T.CanvasTexture(c);t.encoding=T.sRGBEncoding;t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t}
+  function build(){
+    const d=sel(),old=scene.getObjectByName('pivot'),keepQ=old?old.quaternion.clone():home.clone();
+    if(old){scene.remove(old);old.traverse(o=>{o.geometry&&o.geometry.dispose();o.material&&o.material.dispose()})}if(tex)tex.dispose();tex=null;
+    if(!d){render();return}
+    const{prof,H,hs,outer}=profile();tex=textureFor(d);
+    paperMesh=new T.Mesh(paperGeometry(prof),new T.MeshPhongMaterial({map:tex,specular:0x2a2a2a,shininess:35,side:T.DoubleSide}));
+    badge=new T.Group();badge.add(paperMesh);badge.add(buildBack(prof[prof.length-1][0]));
+    const pivot=new T.Group();badge.position.z=-(H+hs)/2;pivot.add(badge);pivot.quaternion.copy(keepQ);
+    pivot.name='pivot';scene.add(pivot);badge=pivot;camDist=Math.max(camDist,0);fit(outer);render()}
+  let fitR=20;function fit(outer){fitR=outer;camera.near=1;camera.far=outer*40;camera.position.set(0,0,outer*2.15/Math.tan(camera.fov*Math.PI/360)*camDistK);camera.updateProjectionMatrix()}
+  let camDistK=1;
+  function resize(){if(!renderer)return;const w=cv.clientWidth||400;renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.setSize(w,w,false);camera.aspect=1;camera.updateProjectionMatrix();render()}
+  function render(){if(renderer)renderer.render(scene,camera)}
+  async function open(){if(!T){msg.textContent='Loading 3D…';try{T=await loadThree()}catch(e){msg.textContent='The 3D library could not load. Check your connection and reload.';return}
+      renderer=new T.WebGLRenderer({canvas:cv,antialias:true,alpha:true});renderer.outputEncoding=T.sRGBEncoding;
+      scene=new T.Scene();camera=new T.PerspectiveCamera(28,1,1,2000);
+      scene.add(new T.AmbientLight(0xffffff,.55));const key=new T.DirectionalLight(0xffffff,.75);key.position.set(-30,45,80);scene.add(key);
+      const rim=new T.DirectionalLight(0xffffff,.25);rim.position.set(40,-30,-40);scene.add(rim);
+      home=new T.Quaternion().setFromEuler(new T.Euler(-.38,.42,0));
+      new ResizeObserver(resize).observe(cv);bindControls();msg.textContent='Drag to turn · scroll or pinch to zoom · double-click to reset'}
+    resize();build()}
+  function refresh(){if(T&&S.tab==='preview')build()}
+  function bindControls(){const ptr=new Map();let last=null;
+    const turn=(dx,dy)=>{const piv=scene.getObjectByName('pivot');if(!piv)return;const len=Math.hypot(dx,dy);if(!len)return;
+      const q=new T.Quaternion().setFromAxisAngle(new T.Vector3(dy/len,dx/len,0),len*.009);piv.quaternion.premultiply(q).normalize();render()}; // arcball-style, no gimbal lock
+    const zoom=f=>{camDistK=Math.min(4,Math.max(.45,camDistK*f));fit(fitR);render()};
+    cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});cv.classList.add('drag')});
+    cv.addEventListener('pointermove',e=>{if(!ptr.has(e.pointerId))return;const prev=ptr.get(e.pointerId),before=[...ptr.values()];ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(ptr.size===1)turn(e.clientX-prev.x,e.clientY-prev.y);
+      else if(ptr.size===2){const now=[...ptr.values()],dist=a=>Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);zoom(dist(before)/(dist(now)||1))}});
+    const up=e=>{ptr.delete(e.pointerId);if(!ptr.size)cv.classList.remove('drag')};cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+    cv.addEventListener('wheel',e=>{e.preventDefault();let dy=e.deltaY;if(e.deltaMode===1)dy*=33;zoom(Math.exp(dy*.0012))},{passive:false});
+    const reset=()=>{const piv=scene.getObjectByName('pivot');if(piv)piv.quaternion.copy(home);camDistK=1;fit(fitR);render()};
+    cv.addEventListener('dblclick',reset);$('#pvReset').onclick=reset}
+  return{open,refresh}
+})();
+
 /* ---------- tabs ---------- */
-function showTab(t){S.tab=t;store('bp.settings',S);$('#view-design').hidden=t!=='design';$('#view-sheet').hidden=t!=='sheet';
-  $('#tab-design').setAttribute('aria-selected',t==='design');$('#tab-sheet').setAttribute('aria-selected',t==='sheet');
-  if(t==='sheet')renderSheet();else{drawEditor();renderLib()}drawMini()}
-$('#tab-design').onclick=()=>showTab('design');$('#tab-sheet').onclick=()=>showTab('sheet');
+function showTab(t){S.tab=t;store('bp.settings',S);for(const k of['design','preview','sheet']){$('#view-'+k).hidden=t!==k;$('#tab-'+k).setAttribute('aria-selected',t===k)}
+  if(t==='sheet')renderSheet();else{drawEditor();renderLib()}if(t==='preview')Preview.open();drawMini()}
+$('#tab-design').onclick=()=>showTab('design');$('#tab-sheet').onclick=()=>showTab('sheet');$('#tab-preview').onclick=()=>showTab('preview');
+$('#toPreview').onclick=()=>showTab('preview');$('#pvEdit').onclick=()=>showTab('design');
 
 /* ---------- examples (first run only) ---------- */
 function example(kind){
@@ -878,7 +975,7 @@ function example(kind){
   }
   await Promise.all(designs.map(loadImg));
   designs.forEach(d=>{lastState[d.id]=snap(d)}); // baseline so the first edit after load can be undone
-  selId=designs[0]?.id||null;showTab(S.tab==='sheet'?'sheet':'design');syncControls();
+  selId=designs[0]?.id||null;showTab(['sheet','preview'].includes(S.tab)?S.tab:'design');syncControls();
 })();
 </script>
 
