@@ -571,7 +571,10 @@ function syncControls(){
   $('#replace').textContent=hasImg?'Replace image':'Add image';
   $('#del').textContent='Delete';delArmed=false;
 }
-function changed(){const d=sel();if(d)saveSoon(d);if(S.tab==='preview')Preview.refresh();drawEditor();syncControls();renderLib(true)}
+/* edits can arrive faster than the screen refreshes: save immediately, redraw at most once per frame */
+let frameQ=0;
+function changed(){const d=sel();if(d)saveSoon(d);if(frameQ)return;
+  frameQ=requestAnimationFrame(()=>{frameQ=0;drawEditor();syncControls();renderLib(true);if(S.tab==='preview')Preview.refresh()})}
 const num=(id,fn)=>$(id).addEventListener('input',e=>{const v=parseFloat(e.target.value);const d=sel();if(!d||!isFinite(v))return;fn(d,v);saveSoon(d);drawEditor();renderLib(true)});
 num('#w',(d,v)=>d.w=Math.max(1,v));num('#x',(d,v)=>d.x=v);num('#y',(d,v)=>d.y=v);num('#rot',(d,v)=>d.rot=v);
 $('#zoom').addEventListener('input',e=>{const d=sel();if(!d)return;scaleAbout(d,Math.exp(+e.target.value)/d.w,{x:d.x,y:d.y})});
@@ -712,7 +715,8 @@ function fillLib(box){box.innerHTML='';if(!designs.length){box.innerHTML='<p cla
     const n=document.createElement('span');n.className='nm';n.textContent=d.name||'Untitled';b.append(c,n);b.onclick=()=>select(d.id);box.append(b)}}
 function renderLib(thumbsOnly){
   const lib=$('#lib');
-  if(thumbsOnly){document.querySelectorAll('#lib canvas.th,#pvLib canvas.th').forEach(c=>{const d=designs.find(x=>x.id===c.dataset.id);if(d)drawThumb(c,d,40)});return}
+  if(thumbsOnly){const d=sel();if(!d)return; // only the selected design can have changed; skip lists on hidden tabs
+    document.querySelectorAll('#lib canvas.th,#pvLib canvas.th').forEach(c=>{if(c.dataset.id===d.id&&c.offsetParent)drawThumb(c,d,40)});return}
   fillLib($('#pvLib'));lib.innerHTML='';
   if(!designs.length){lib.innerHTML='<p class="empty">No designs yet. Start with an image.</p>';return}
   for(const d of designs){const b=document.createElement('button');b.className='item';b.setAttribute('aria-current',d.id===selId);
@@ -933,7 +937,7 @@ const Preview=(()=>{
     pivot.name='pivot';scene.add(pivot);badge=pivot;camDist=Math.max(camDist,0);fit(outer);render()}
   let fitR=20;function fit(outer){fitR=outer;camera.near=1;camera.far=outer*40;camera.position.set(0,0,outer*2.15/Math.tan(camera.fov*Math.PI/360)*camDistK);camera.updateProjectionMatrix()}
   let camDistK=1;
-  function resize(){if(!renderer)return;const w=cv.clientWidth||400;renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.setSize(w,w,false);camera.aspect=1;camera.updateProjectionMatrix();render()}
+  function resize(){if(!renderer||S.tab!=='preview')return;const w=cv.clientWidth||400;renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.setSize(w,w,false);camera.aspect=1;camera.updateProjectionMatrix();render()}
   function render(){if(renderer)renderer.render(scene,camera)}
   async function open(){if(!T){msg.textContent='Loading 3D…';try{T=await loadThree()}catch(e){msg.textContent='The 3D library could not load. Check your connection and reload.';return}
       renderer=new T.WebGLRenderer({canvas:cv,antialias:true,alpha:true});renderer.outputEncoding=T.sRGBEncoding;
