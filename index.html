@@ -602,9 +602,11 @@ $('#bgMirror').addEventListener('change',e=>{const d=sel();if(!d)return;fillOf(d
 $('#addStop').onclick=()=>{const d=sel();if(!d)return;const f=fillOf(d),st=[...f.stops].sort((a,b)=>a.p-b.p);
   let gi=0,gs=-1;for(let i=0;i<st.length-1;i++){const g=st[i+1].p-st[i].p;if(g>gs){gs=g;gi=i}}
   f.stops.push({c:st[gi]?.c||'#888888',p:Math.round(st.length>1?(st[gi].p+st[gi+1].p)/2:50)});bgChanged(true)};
+/* don't rewrite a field the user is typing in ("6." would become "6") */
+const setIdle=(el,v)=>{if(document.activeElement!==el)el.value=v};
 function syncBg(d){
   const f=fillOf(d),grad=f.type!=='solid';
-  $('#bgPreset').value=f.preset!=null&&PRESETS[f.preset]?String(f.preset):'';$('#bgType').value=f.type;$('#bgColor').value=f.color;$('#bgAngle').value=f.angle||0;$('#bgRep').value=f.repeat||1;$('#bgMirror').checked=!!f.mirror;
+  $('#bgPreset').value=f.preset!=null&&PRESETS[f.preset]?String(f.preset):'';$('#bgType').value=f.type;$('#bgColor').value=f.color;setIdle($('#bgAngle'),f.angle||0);setIdle($('#bgRep'),f.repeat||1);$('#bgMirror').checked=!!f.mirror;
   $('#bgColorWrap').hidden=grad;$('#bgAngleWrap').hidden=!(f.type==='linear'||f.type==='conic');$('#bgRepWrap').hidden=!grad;
   $('#bgMirrorWrap').hidden=!grad;$('#stops').hidden=!grad;$('#stopBtns').hidden=!grad;
   const box=$('#stops');
