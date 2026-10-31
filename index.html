@@ -378,7 +378,7 @@ const sel=()=>designs.find(d=>d.id===selId);
 
 /* ---------- drawing ---------- */
 function drawImg(ctx,d,cx,cy,s){
-  const im=imgs.get(d.id);if(!im)return;
+  const im=(pickMode&&ctx.canvas===ed&&raws.get(d.id))||imgs.get(d.id);if(!im)return; // picking a key colour shows the un-keyed image
   ctx.save();ctx.imageSmoothingEnabled=!d.pixel;if(!d.pixel)ctx.imageSmoothingQuality='high';ctx.translate(cx+d.x*s,cy+d.y*s);ctx.rotate(d.rot*Math.PI/180);
   const w=d.w*s,h=w*d.ih/d.iw;ctx.drawImage(im,-w/2,-h/2,w,h);ctx.restore();
 }
@@ -431,7 +431,7 @@ new ResizeObserver(()=>drawEditor()).observe(ed);
 function toMM(e){const b=ed.getBoundingClientRect();return{x:(e.clientX-b.left-b.width/2)/edScale,y:(e.clientY-b.top-b.height/2)/edScale}}
 const ptrs=new Map();let drag=null;
 let pickMode=false;
-function setPick(on){pickMode=on;ed.classList.toggle('pick',on);$('#keyPick').setAttribute('aria-pressed',on);$('#keyPick').textContent=on?'Click image…':'Pick'}
+function setPick(on){pickMode=on;ed.classList.toggle('pick',on);$('#keyPick').setAttribute('aria-pressed',on);$('#keyPick').textContent=on?'Click image…':'Pick';drawEditor()}
 function sampleAt(d,p){
   const raw=raws.get(d.id);if(!raw)return null;const t=-d.rot*Math.PI/180,dx=p.x-d.x,dy=p.y-d.y;
   const lx=dx*Math.cos(t)-dy*Math.sin(t),ly=dx*Math.sin(t)+dy*Math.cos(t),h=d.w*d.ih/d.iw;
