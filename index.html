@@ -161,7 +161,7 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
       <div class="fields">
         <label class="f">Cut diameter<div class="unit"><input type="number" id="cut" min="10" max="150" step="0.5"><span>mm</span></div></label>
         <label class="f">Visible face<div class="unit"><input type="number" id="vis" min="5" max="150" step="0.5"><span>mm</span></div></label>
-        <label class="f">Fold width<div class="unit"><input type="number" id="fold" min="0" max="50" step="0.1"><span>mm</span></div></label>
+        <label class="f">Fold width<div class="unit"><input type="number" id="fold" min="0.5" max="50" step="0.1"><span>mm</span></div></label>
       </div>
       <p class="hint" style="text-align:left;margin:0">Fold width: how far past the face edge the print still shows on the badge's rim.</p>
       <p class="hint" style="text-align:left">Applies to every design and sheet.</p>
@@ -308,7 +308,7 @@ const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim
 
 let S=load('bp.settings',{cut:44,visible:32,paper:'a4',margin:5,gap:1,ring:true,emptyGuides:true,scaleBar:true,ticks:true,bleed:0,cutColor:'#000000',cutAlpha:100,cutW:.3,guideColor:'#000000',guideAlpha:20,guideW:.1,pvZoom:'small',zoomAt:'mouse',rotAt:'image',touchMode:'move',moveSnap:true,anchor:{x:0,y:0},tab:'design',ovs:0,ovsUnit:'px'});
 if(S.tickMode==null)S.tickMode=S.ticks===false?'none':'30';
-if(S.fold==null)S.fold=1.5;
+if(S.fold==null)S.fold=1.5;S.fold=Math.max(.5,S.fold);
 let qty=load('bp.qty',{});
 let designs=[],selId=null;const imgs=new Map();
 
@@ -725,7 +725,7 @@ function select(id){selId=id;if(S.tab==='preview')queueMicrotask(()=>Preview.ref
 function syncSize(){$('#cut').value=S.cut;$('#vis').value=S.visible;$('#fold').value=S.fold;$('#specline').textContent=`⌀${S.cut} mm blanks · ⌀${S.visible} mm face · ${perSheet()} per ${S.paper==='a4'?'A4':'Letter'} sheet`}
 ['#cut','#vis','#fold'].forEach(id=>$(id).addEventListener('change',()=>{
   let c=parseFloat($('#cut').value),v=parseFloat($('#vis').value),f=parseFloat($('#fold').value);
-  if(!(c>=10))c=S.cut;if(!(v>0))v=S.visible;if(v>=c)v=c-1;if(!(f>=0))f=S.fold;f=Math.min(f,(c-v)/2);S.cut=c;S.visible=v;S.fold=f;store('bp.settings',S);syncSize();drawEditor();renderLib();if(S.tab==='sheet')renderSheet()}));
+  if(!(c>=10))c=S.cut;if(!(v>0))v=S.visible;if(v>=c)v=c-1;if(!(f>=.5))f=Math.max(.5,f>0?f:S.fold);f=Math.min(f,(c-v)/2);S.cut=c;S.visible=v;S.fold=f;store('bp.settings',S);syncSize();drawEditor();renderLib();if(S.tab==='sheet')renderSheet()}));
 
 /* ---------- sheet layout ---------- */
 function hexRows(Wu,Hu,D,P,startOff){
@@ -877,18 +877,23 @@ const Preview=(()=>{
   function loadThree(){if(window.THREE)return Promise.resolve(window.THREE);if(loading)return loading;
     loading=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
       sc.onload=()=>res(window.THREE);sc.onerror=()=>{loading=null;rej(new Error('three'))};document.head.append(sc)});return loading}
-  function profile(){ // [r,z] points in mm from the face centre outwards and round the back
-    const P=S.cut/2,Rv=S.visible/2,rr=Math.max(1,Math.min(4,(P-Rv)/2.2)),r1=Math.max(1,Rv-rr*.5),hs=Rv*.05,rr2=.8,side=Math.max(.6,(P-Rv)*.25);
-    const H=rr+side+rr2,pts=[];
-    for(let i=0;i<=40;i++){const r=r1*i/40;pts.push([r,H+hs*(1-(r/r1)**2)])}
-    for(let i=1;i<=24;i++){const a=Math.PI/2*(1-i/24);pts.push([r1+rr*Math.cos(a),H-rr+rr*Math.sin(a)])}
-    for(let i=1;i<=6;i++)pts.push([r1+rr,H-rr-(H-rr-rr2)*i/6]);
-    for(let i=1;i<=12;i++){const a=-Math.PI/2*i/12;pts.push([r1+rr-rr2+rr2*Math.cos(a),rr2+rr2*Math.sin(a)])}
-    for(let i=1;i<=20;i++)pts.push([(r1+rr-rr2)*(1-i/20),0]);
+  function profile(){ // [r,z,arcLength] from the face centre outwards, round the lip and under the back
+    const P=S.cut/2,Rv=S.visible/2,depth=Math.max(.5,+S.fold||.5),re=.3,rb=.3,SIDE=40*Math.PI/180,D=Math.PI/180;
+    const Rf=Math.max(1,Rv-re*.5),hs=Rf*Math.tan(1.5*D)/2;           // face crown: ~1.5 degrees at the edge
+    const pts=[];let x=0,z=depth+hs,h=0;
+    for(let i=0;i<=48;i++){const r=Rf*i/48;pts.push([r,depth+hs*(1-(r/Rf)**2)])}
+    x=Rf;z=depth;h=-Math.atan(2*hs/Rf);
+    const arc=(rad,to,n)=>{const cx=x+rad*Math.cos(h-Math.PI/2),cz=z+rad*Math.sin(h-Math.PI/2),h0=h; // clockwise turn
+      for(let i=1;i<=n;i++){h=h0+(to-h0)*i/n;x=cx+rad*Math.cos(h+Math.PI/2);z=cz+rad*Math.sin(h+Math.PI/2);pts.push([x,z])}};
+    const line=(L,n)=>{const x0=x,z0=z;for(let i=1;i<=n;i++){x=x0+Math.cos(h)*L*i/n;z=z0+Math.sin(h)*L*i/n;pts.push([x,z])}};
+    arc(re,-(Math.PI-SIDE),14);                                        // sharp front lip
+    const dzBack=rb*(Math.sin(-(Math.PI-SIDE)+Math.PI/2)-Math.sin(-Math.PI+Math.PI/2)); // z lost turning the back edge
+    line(Math.max(0,(z-dzBack)/Math.sin(SIDE)),10);                    // fold slopes back toward the middle at 40 degrees
+    const backR=x;arc(rb,-Math.PI,8);line(Math.max(0,x),30);                         // round the back edge, then flat inward
     const out=[[pts[0][0],pts[0][1],0]];let acc=0; // cut the profile off where the paper runs out (arc length = cut radius)
-    for(let i=1;i<pts.length;i++){const[a,b]=[pts[i-1],pts[i]],L=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    for(let i=1;i<pts.length;i++){const[a,b]=[pts[i-1],pts[i]],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1e-9)continue;
       if(acc+L>=P){const t=(P-acc)/L;out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,P]);break}acc+=L;out.push([b[0],b[1],acc])}
-    return{prof:out,H,hs,outer:r1+rr}}
+    return{prof:out,H:depth,hs,outer:Rf+re,backR}}
   function paperGeometry(prof){const SEG=128,pos=[],uv=[],idx=[],P=S.cut/2,n=prof.length;
     for(let j=0;j<n;j++){const[r,z,s]=prof[j];for(let k=0;k<=SEG;k++){const th=k/SEG*Math.PI*2,c=Math.cos(th),sn=Math.sin(th);
       pos.push(r*c,r*sn,z);uv.push(.5+s/(2*P)*c,.5+s/(2*P)*sn)}}
@@ -897,7 +902,7 @@ const Preview=(()=>{
     g.setIndex(idx);g.computeVertexNormals();return g}
   function buildBack(innerR){const g=new T.Group(),metal=new T.MeshPhongMaterial({color:0x8d949d,specular:0x555555,shininess:70}),
       steel=new T.MeshPhongMaterial({color:0xc9ced4,specular:0x999999,shininess:110});
-    const plate=new T.Mesh(new T.CircleGeometry(innerR+.4,96),metal);plate.rotation.x=Math.PI;plate.position.z=-.05;g.add(plate);
+    const plate=new T.Mesh(new T.CircleGeometry(Math.max(1,innerR),96),metal);plate.rotation.x=Math.PI;plate.position.z=-.08;g.add(plate);
     const y=innerR*.3,L=innerR*1.45,x0=-L/2,x1=L/2;
     const hinge=new T.Mesh(new T.BoxGeometry(3,2.2,1.4),steel);hinge.position.set(x0-.6,y,-.75);g.add(hinge);       // riveted hinge block
     const pin=new T.Mesh(new T.CylinderGeometry(.32,.32,L,16),steel);pin.rotation.z=Math.PI/2;pin.position.set(0,y,-1.25);g.add(pin);
@@ -911,9 +916,9 @@ const Preview=(()=>{
     const d=sel(),old=scene.getObjectByName('pivot'),keepQ=old?old.quaternion.clone():home.clone();
     if(old){scene.remove(old);old.traverse(o=>{o.geometry&&o.geometry.dispose();o.material&&o.material.dispose()})}if(tex)tex.dispose();tex=null;
     if(!d){render();return}
-    const{prof,H,hs,outer}=profile();tex=textureFor(d);
+    const{prof,H,hs,outer,backR}=profile();tex=textureFor(d);
     paperMesh=new T.Mesh(paperGeometry(prof),new T.MeshPhongMaterial({map:tex,specular:0x2a2a2a,shininess:35,side:T.DoubleSide}));
-    badge=new T.Group();badge.add(paperMesh);badge.add(buildBack(prof[prof.length-1][0]));
+    badge=new T.Group();badge.add(paperMesh);badge.add(buildBack(backR-.7)); // the back collar covers the tucked-under paper
     const pivot=new T.Group();badge.position.z=-(H+hs)/2;pivot.add(badge);pivot.quaternion.copy(keepQ);
     pivot.name='pivot';scene.add(pivot);badge=pivot;camDist=Math.max(camDist,0);fit(outer);render()}
   let fitR=20;function fit(outer){fitR=outer;camera.near=1;camera.far=outer*40;camera.position.set(0,0,outer*2.15/Math.tan(camera.fov*Math.PI/360)*camDistK);camera.updateProjectionMatrix()}
