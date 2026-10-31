@@ -81,7 +81,7 @@ input[type=color]{width:44px;height:32px;border:1px solid var(--line);border-rad
 .ibtn .sw{width:14px;height:14px;border-radius:3px;border:1px solid var(--muted);background:transparent}
 .ibtn.done{border-color:var(--accent);color:var(--accent)}
 .stop .unit input{padding-right:26px}
-#ed.pick{cursor:crosshair}
+#ed.pick,#ed.anchoring{cursor:crosshair}
 output.spec{font-size:11px}
 .pastebox{border:1.5px dashed var(--line);border-radius:10px;padding:12px 10px;font-size:12px;color:var(--muted);text-align:center;cursor:text;caret-color:transparent;outline:none;user-select:none}
 .pastebox:empty::before{content:attr(data-ph)}
@@ -413,6 +413,7 @@ function drawEditor(){
   ctx.beginPath();ctx.moveTo(c-6*r,c);ctx.lineTo(c+6*r,c);ctx.moveTo(c,c-6*r);ctx.lineTo(c,c+6*r);ctx.stroke();ctx.globalAlpha=1;
   ctx.fillStyle=css('--muted');ctx.font=`${11*r}px ${css('--f-mono')}`;ctx.textAlign='center';
   ctx.fillText(`⌀ ${S.cut} mm cut`,c,c+(R*s)+16*r);
+  ed.classList.toggle('anchoring',hov.alt&&hov.in&&!drag);
   const toPx=p=>[c+p.x*s,c+p.y*s];
   if(hov.alt&&hov.in){ctx.fillStyle=css('--accent');ctx.globalAlpha=.55;
     for(const q of anchorSnaps()){const[x,y]=toPx(q);ctx.beginPath();ctx.arc(x,y,2*r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
