@@ -72,6 +72,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 #pv3d{width:100%;max-width:760px;aspect-ratio:1;display:block;touch-action:none;cursor:grab;border-radius:14px;background:var(--surface);border:1.5px dashed var(--line);box-sizing:border-box}
 #pv3d.drag{cursor:grabbing;border-style:solid;border-color:var(--accent)}
 @media (max-width:980px){.pvgrid{grid-template-columns:1fr}#pvLib{flex-direction:row;flex-wrap:wrap}}
+.projrow{gap:6px}
+.projbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:10px 14px;font-size:13px}
+.projbar.err{background:var(--surface);border-color:var(--warn);color:var(--warn)}
 .edopts{justify-content:center;gap:8px 16px}
 .edopts .check{gap:8px}.edopts select{width:auto}
 .legend i.b{border-top:2px dotted var(--warn)}
@@ -138,6 +141,10 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
     <div style="display:flex;flex-direction:column;gap:6px">
       <h1><span class="dot" aria-hidden="true"></span>Badge Press Studio</h1>
       <div class="spec" id="specline"></div>
+      <div class="row projrow">
+        <button class="btn sm" id="projSave" title="Save all designs and settings to a file">Save project</button>
+        <button class="btn sm" id="projOpen" title="Open a saved project file">Open project…</button>
+      </div>
     </div>
     <div class="tabs" role="tablist">
       <button role="tab" id="tab-design" aria-selected="true">Design</button>
@@ -145,6 +152,14 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
       <button role="tab" id="tab-sheet" aria-selected="false">Print sheet</button>
     </div>
   </header>
+  <div class="projbar" id="projBar" role="status" hidden>
+    <span id="projMsg"></span>
+    <div class="row" id="projChoice" hidden>
+      <button class="btn sm primary" id="projReplace">Replace current project</button>
+      <button class="btn sm" id="projAdd">Add its designs to this one</button>
+      <button class="btn sm" id="projCancel">Cancel</button>
+    </div>
+  </div>
 
   <!-- DESIGN -->
   <section id="view-design" class="grid">
@@ -297,6 +312,7 @@ hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
 </div>
 <button class="mini" id="mini" hidden aria-label="Back to the badge editor" title="Back to the editor"><canvas id="miniCv"></canvas></button>
 <input type="file" id="file" accept="image/*" hidden>
+<input type="file" id="projFile" accept=".json,application/json" hidden>
 
 <script>
 const $=s=>document.querySelector(s);
@@ -317,7 +333,8 @@ const DB={db:null,
   async open(){try{this.db=await new Promise((res,rej)=>{const r=indexedDB.open('badge-press',1);r.onupgradeneeded=()=>r.result.createObjectStore('designs',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}catch(e){this.db=null}},
   async all(){if(!this.db)return[];try{return await new Promise((res,rej)=>{const q=this.db.transaction('designs').objectStore('designs').getAll();q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}catch(e){return[]}},
   put(d){try{this.db&&this.db.transaction('designs','readwrite').objectStore('designs').put(d)}catch(e){}},
-  del(id){try{this.db&&this.db.transaction('designs','readwrite').objectStore('designs').delete(id)}catch(e){}}};
+  del(id){try{this.db&&this.db.transaction('designs','readwrite').objectStore('designs').delete(id)}catch(e){}},
+  clear(){try{this.db&&this.db.transaction('designs','readwrite').objectStore('designs').clear()}catch(e){}}};
 const timers={};
 function saveSoon(d){clearTimeout(timers[d.id]);timers[d.id]=setTimeout(()=>DB.put(d),350);scheduleCommit(d)}
 
@@ -962,6 +979,51 @@ const Preview=(()=>{
     cv.addEventListener('dblclick',reset);$('#pvReset').onclick=reset}
   return{open,refresh}
 })();
+
+/* ---------- project files: every design (images embedded as data URLs), quantities and the print/badge settings ---------- */
+const PROJECT_FORMAT='badge-press-studio-project',PROJECT_KEYS=['cut','visible','fold','paper','margin','gap','ring','emptyGuides','scaleBar','tickMode',
+  'cutColor','cutAlpha','cutW','guideColor','guideAlpha','guideW','anchor'];
+function saveFile(name,blob){const a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),30000)}
+function projMsg(text,{err=false,choice=false,auto=0}={}){const b=$('#projBar');b.hidden=!text;b.classList.toggle('err',err);$('#projMsg').textContent=text||'';$('#projChoice').hidden=!choice;
+  clearTimeout(projMsg.t);if(auto)projMsg.t=setTimeout(()=>{b.hidden=true},auto)}
+$('#projSave').onclick=()=>{flushCommits();
+  const settings={};for(const k of PROJECT_KEYS)settings[k]=S[k];
+  const proj={format:PROJECT_FORMAT,version:1,saved:new Date().toISOString(),settings,designs:designs.map(d=>({...d})),qty:{...qty}};
+  const day=new Date().toISOString().slice(0,10),name=`badge-project-${day}.json`;
+  saveFile(name,new Blob([JSON.stringify(proj)],{type:'application/json'}));
+  projMsg(`Saved ${designs.length} design${designs.length===1?'':'s'} to ${name}.`,{auto:4000})};
+let pendingProj=null;
+$('#projOpen').onclick=()=>$('#projFile').click();
+$('#projFile').addEventListener('change',async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+  let p;try{p=JSON.parse(await f.text())}catch(_){projMsg(`${f.name} isn't a project file (it isn't valid JSON).`,{err:true,auto:6000});return}
+  if(!p||p.format!==PROJECT_FORMAT||!Array.isArray(p.designs)){projMsg(`${f.name} isn't a Badge Press Studio project.`,{err:true,auto:6000});return}
+  if((p.version|0)>1){projMsg(`${f.name} was saved by a newer version of the app. Reload the page and try again.`,{err:true,auto:8000});return}
+  pendingProj=p;const n=p.designs.length;
+  if(!designs.length)return applyProject('replace');
+  projMsg(`${f.name}: ${n} design${n===1?'':'s'}. Replace what's here, or add them alongside?`,{choice:true})});
+$('#projCancel').onclick=()=>{pendingProj=null;projMsg('')};
+$('#projReplace').onclick=()=>applyProject('replace');
+$('#projAdd').onclick=()=>applyProject('add');
+function cleanDesign(raw,newId){if(!raw||typeof raw!=='object')return null;
+  const d={...blank(String(raw.name||'Untitled').slice(0,60)),...raw};
+  d.id=newId?uid():String(raw.id||uid());d.name=String(d.name||'Untitled').slice(0,60);
+  if(typeof d.img!=='string'||!/^data:image\//.test(d.img))d.img=null;   // only embedded images, never URLs
+  for(const k of['w','x','y','rot','iw','ih']){const v=+d[k];d[k]=isFinite(v)?v:0}
+  if(d.fill&&(typeof d.fill!=='object'||!Array.isArray(d.fill.stops)||d.fill.stops.length<2))d.fill=defFill();
+  if(!d.key||typeof d.key!=='object')d.key=defKey();
+  d.iw=d.iw>0?d.iw:1;d.ih=d.ih>0?d.ih:1;d.w=d.w>0?d.w:S.cut;d.x=d.x||0;d.y=d.y||0;d.rot=d.rot||0;d.pixel=!!d.pixel;
+  return d}
+async function applyProject(mode){const p=pendingProj;pendingProj=null;if(!p)return;projMsg('Loading project…');
+  const replace=mode==='replace',idMap={};
+  const incoming=p.designs.map(raw=>{const d=cleanDesign(raw,!replace);if(d&&raw&&raw.id)idMap[raw.id]=d.id;return d}).filter(Boolean);
+  if(replace){DB.clear();designs=[];qty={};imgs.clear();raws.clear();undoStack.length=redoStack.length=0;for(const k in lastState)delete lastState[k];
+    if(p.settings&&typeof p.settings==='object')for(const k of PROJECT_KEYS)if(k in p.settings)S[k]=p.settings[k];
+    S.fold=Math.max(.5,+S.fold||1.5);if(!S.anchor||!isFinite(+S.anchor.x)||!isFinite(+S.anchor.y))S.anchor={x:0,y:0};store('bp.settings',S)}
+  const base=Date.now();incoming.forEach((d,i)=>{d.order=base+i;designs.push(d);DB.put(d)});
+  if(p.qty&&typeof p.qty==='object')for(const[id,n]of Object.entries(p.qty))if(idMap[id]&&n>0)qty[idMap[id]]=n|0;store('bp.qty',qty);
+  await Promise.all(incoming.map(loadImg));incoming.forEach(d=>{lastState[d.id]=snap(d)});
+  syncSize();syncSheetSettings();syncUndo();select(incoming[0]?.id||designs[0]?.id||null);showTab(S.tab);
+  projMsg(`${replace?'Opened':'Added'} ${incoming.length} design${incoming.length===1?'':'s'}${replace?' and the project settings':''}.`,{auto:4000})}
 
 /* ---------- tabs ---------- */
 function showTab(t){S.tab=t;store('bp.settings',S);for(const k of['design','preview','sheet']){$('#view-'+k).hidden=t!==k;$('#tab-'+k).setAttribute('aria-selected',t===k)}

@@ -6,6 +6,7 @@ A single-page tool for making round pin-badge prints. Design badges (place, scal
 
 - Defaults: 44 mm cut circle, 32 mm visible face, 1.5 mm visible fold. All configurable.
 - Everything runs in the browser. Designs are saved in that browser's local storage (IndexedDB); nothing is uploaded.
+- **Save project** writes every design (images embedded), print quantities and badge/sheet settings to a `.json` file; **Open project…** loads one back, replacing the current project or adding its designs. Use this to back up work or move it between browsers.
 - Print the PDF at 100% / Actual size, not "Fit to page". Check the 50 mm scale bar.
 
 The whole app is `index.html`. Pushing to `main` deploys it to GitHub Pages via `.github/workflows/pages.yml`.
